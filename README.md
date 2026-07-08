@@ -29,16 +29,16 @@ Options:
 
 ## Examples
 
-Create a dropdown terminal:
+Register a keybind that creates a dropdown terminal with your favorite terminal emulator:
 
 ```bash
-toggle-process --id wezdrop -- \
-    wezterm start --attach --domain wezdrop --class wezdrop-full
+toggle-process --id dropdown -- \
+    foot --app-id dropdown-full -o shell='tmux new-session -AX -t drop'
 ```
 
-Then configure your window manager to make windows with class `wezdrop-full` fullscreen.
+Then configure your window manager to make windows with class `dropdown-full` fullscreen.
 
-Run multiple independent toggles:
+Run multiple independent toggles by giving different `--id`:
 
 ```bash
 toggle-process --id music -- mpv ~/Music/radio.mp3
