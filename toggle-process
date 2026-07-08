@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-pid_file="${TMPDIR:-/tmp}/toggle-process.pid"
-lock_file="${TMPDIR:-/tmp}/toggle-process.lock"
+state_dir="${TMPDIR:-/tmp}/toggle-process"
+id="default"
 signal="TERM"
+
 usage() {
   cat <<EOF
 Usage:
@@ -11,11 +12,11 @@ Usage:
 
 Arguments:
   <COMMAND>  Command to run
-  [ARGS]...  Arguments for the Command
+  [ARGS]...  Arguments for the command
 
 Options:
-  --pid-file <PATH>   PID file (default: \${TMPDIR:-/tmp}/toggle-process.pid)
-  --lock-file <PATH>  Lock file (default: \${TMPDIR:-/tmp}/toggle-process.lock)
+  --id <ID>           Instance ID (default: default)
+  --state-dir <PATH>  State directory (default: \${TMPDIR:-/tmp}/toggle-process)
   -s SIGNAL           Signal to send (default: TERM)
   -h, --help          Show this help message
 EOF
@@ -24,37 +25,76 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --pid-file=*)  pid_file="${1#*=}"; shift ;;
-    --pid-file)    pid_file="${2:?}"; shift 2 ;;
-    --lock-file=*) lock_file="${1#*=}"; shift ;;
-    --lock-file)   lock_file="${2:?}"; shift 2 ;;
-    -s)            signal="${2:?}"; shift 2 ;;
-    -h|--help)     usage ;;
-    --)            shift; break ;;
-    *)             shift ;;
+    --id=*)
+      id="${1#*=}"
+      shift
+      ;;
+    --id)
+      id="${2:?}"
+      shift 2
+      ;;
+    --state-dir=*)
+      state_dir="${1#*=}"
+      shift
+      ;;
+    --state-dir)
+      state_dir="${2:?}"
+      shift 2
+      ;;
+    -s)
+      signal="${2:?}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      usage 1
+      ;;
+    *)
+      break
+      ;;
   esac
 done
 
-if [[ $# -eq 0 ]]; then
-  usage 1
-fi
+[[ $# -gt 0 ]] || usage 1
+
+[[ $id =~ ^[A-Za-z0-9._-]+$ ]] || {
+    echo "Invalid instance ID: $id" >&2
+    exit 1
+}
+
+instance_dir="$state_dir/$id"
+mkdir -p "$instance_dir"
+
+pid_file="$instance_dir/pid"
+lock_file="$instance_dir/lock"
 
 exec 9>"$lock_file"
 
 if flock -n 9; then
   (
+    # Inherit FD 9 so the lock is held until the child exits.
     "$@" &
     pid=$!
-    echo "$pid" >"$pid_file"
+
+    tmp="$pid_file.$$"
+    printf '%s\n' "$pid" >"$tmp"
+    mv "$tmp" "$pid_file"
+
     wait "$pid"
     rm -f "$pid_file"
   ) &
 else
   if [[ -r $pid_file ]]; then
     pid=$(<"$pid_file")
-    if kill -0 "$pid" 2>/dev/null; then
+    if [[ $pid =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
       kill "-$signal" "$pid"
     fi
   fi
 fi
-
