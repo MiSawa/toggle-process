@@ -80,7 +80,11 @@ exec 9>"$lock_file"
 if flock -n 9; then
   (
     # Inherit FD 9 so the lock is held until the child exits.
-    "$@" &
+    (
+        # Do not FD 9 so the lock won't be held by the spawned process.
+        exec 9>&-
+        exec "$@"
+    ) &
     pid=$!
 
     tmp="$pid_file.$$"
